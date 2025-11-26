@@ -8,6 +8,10 @@ import { ChevronLeft, Loader2 } from 'lucide-react'
 import { Header } from '@/components/dashboard/header'
 import { useWallets } from '@privy-io/react-auth'
 
+import { ethers } from 'ethers';
+import { fortunaCoreAddress, fortunaCoreABI } from '@/lib/contracts';
+import { signPermit } from '@/lib/permit';
+
 // ... (rest of the imports)
 
 export default function JoinRoundPage() {
@@ -47,7 +51,7 @@ export default function JoinRoundPage() {
   }, [wallets])
 
   const platformFee = entryFee ? (Number(entryFee) * 0.02).toFixed(2) : '0.00'
-  const totalCost = entryFee ? (Number(entryFee) + Number(platformFee)).toFixed(2) : '0.00'
+  const totalCost = entryFee;
 
   const handleJoinRound = async () => {
     const wallet = wallets[0];
@@ -64,7 +68,8 @@ export default function JoinRoundPage() {
       const viemClient = await wallet.getViemClient()
       const viemAccount = await wallet.getViemAccount()
 
-      const permitAmount = ethers.parseUnits(totalCost, 6)
+      const permitAmount = ethers.parseUnits(entryFee, 6)
+      const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
       
       const signature = await signPermit({
         tokenAddress: process.env.NEXT_PUBLIC_USDC_ADDRESS!,
@@ -72,10 +77,11 @@ export default function JoinRoundPage() {
         account: viemAccount,
         spenderAddress: fortunaCoreAddress,
         permitAmount: permitAmount,
+        deadline: deadline,
       })
 
       // Call the correct contract method with the signature
-      const tx = await contract.joinRoundWithPermit(activeRoundId, permitAmount, signature, {
+      const tx = await contract.joinRoundWithPermit(activeRoundId, permitAmount, deadline, signature, {
         gasLimit: 1000000,
       })
       
@@ -88,6 +94,7 @@ export default function JoinRoundPage() {
       setIsLoading(false)
     }
   }
+
 
   if (isFetching) {
     return (

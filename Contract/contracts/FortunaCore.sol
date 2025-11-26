@@ -8,9 +8,12 @@ import "./IFortunaCore.sol";
 import "./IFortunaManager.sol";
 import "./FortunaVRF.sol";
 import "./access/Admin.sol";
+import "./IERC20.sol";
+import "./IERC20Permit.sol";
 
 contract FortunaCore is IFortunaCore, Admin {
     IFortunaManager public manager;
+    IERC20 public usdcToken;
 
     uint256 private _entryFee;
     uint256 private _platformFeeBP;
@@ -29,6 +32,7 @@ contract FortunaCore is IFortunaCore, Admin {
    
     constructor(
         address managerAddress,
+        address usdcTokenAddress,
         uint256 entryFee,
         uint256 platformFeeBP,
         address vrfCoordinator_,
@@ -38,8 +42,10 @@ contract FortunaCore is IFortunaCore, Admin {
         uint16 requestConfirmations_
     ) {
         require(managerAddress != address(0), "InvalidManager");
+        require(usdcTokenAddress != address(0), "InvalidUSDCAddress");
 
         manager = IFortunaManager(managerAddress);
+        usdcToken = IERC20(usdcTokenAddress);
         _entryFee = entryFee;
         _platformFeeBP = platformFeeBP;
         _paused = false;
@@ -61,14 +67,52 @@ contract FortunaCore is IFortunaCore, Admin {
         _;
     }
 
-    function joinRound(uint256 roundId) external payable override notPaused {
-        if (msg.value != _entryFee) revert Errors.InvalidEntryFee();
+    function joinRound(uint256 roundId) external override notPaused {
         if (!manager.roundExists(roundId)) revert Errors.InvalidRoundId();
 
-        FortunaVRF roundContract = FortunaVRF(roundContracts[roundId]);
-        roundContract.addPlayer{value: msg.value}(msg.sender);
+        address payable roundContractAddress = roundContracts[roundId];
+        FortunaVRF roundContract = FortunaVRF(roundContractAddress);
 
-        emit Events.PlayerJoined(roundId, msg.sender, msg.value);
+        // Transfer USDC from player to the round contract
+        bool sent = usdcToken.transferFrom(msg.sender, roundContractAddress, _entryFee);
+        if (!sent) revert Errors.TransferFailed();
+
+        roundContract.addPlayer(msg.sender);
+
+        emit Events.PlayerJoined(roundId, msg.sender, _entryFee);
+
+        if (roundContract.isRoundFull() || roundContract.isExpired()) {
+            _closeRound(roundId);
+        }
+    }
+
+    function joinRoundWithPermit(uint256 roundId, uint256 amount, uint256 deadline, bytes memory signature) external notPaused {
+        if (!manager.roundExists(roundId)) revert Errors.InvalidRoundId();
+        if (amount != _entryFee) revert Errors.InvalidEntryFee();
+
+        address payable roundContractAddress = roundContracts[roundId];
+        FortunaVRF roundContract = FortunaVRF(roundContractAddress);
+
+        // Split signature
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(signature, 0x20))
+            s := mload(add(signature, 0x40))
+            v := byte(0, mload(add(signature, 0x60)))
+        }
+
+        // Use permit to approve spending
+        IERC20Permit(address(usdcToken)).permit(msg.sender, address(this), amount, deadline, v, r, s);
+
+        // Transfer USDC from player to the round contract
+        bool sent = usdcToken.transferFrom(msg.sender, roundContractAddress, amount);
+        if (!sent) revert Errors.TransferFailed();
+
+        roundContract.addPlayer(msg.sender);
+
+        emit Events.PlayerJoined(roundId, msg.sender, amount);
 
         if (roundContract.isRoundFull() || roundContract.isExpired()) {
             _closeRound(roundId);
@@ -90,6 +134,7 @@ contract FortunaCore is IFortunaCore, Admin {
             startTime,
             address(manager),
             address(this),
+            address(usdcToken),
             vrfCoordinator,
             keyHash,
             subscriptionId,

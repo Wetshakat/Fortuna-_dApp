@@ -12,6 +12,7 @@ const FortunaModule = buildModule("FortunaModule", (m) => {
   const requestConfirmations = process.env.REQUEST_CONFIRMATIONS;
   const entryFee = process.env.ENTRY_FEE;
   const platformFeeBP = process.env.PLATFORM_FEE_BP;
+  const usdcAddress = process.env.USDC_ADDRESS;
 
   if (
     !vrfCoordinator ||
@@ -20,7 +21,8 @@ const FortunaModule = buildModule("FortunaModule", (m) => {
     !callbackGasLimit ||
     !requestConfirmations ||
     !entryFee ||
-    !platformFeeBP
+    !platformFeeBP ||
+    !usdcAddress
   ) {
     throw new Error("Missing environment variables for deployment");
   }
@@ -28,8 +30,9 @@ const FortunaModule = buildModule("FortunaModule", (m) => {
   const manager = m.contract("FortunaManager");
 
   const core = m.contract("FortunaCore", [
-    manager,  // Changed from manager.address to manager
-    ethers.parseEther(entryFee),
+    manager,
+    usdcAddress,
+    ethers.parseUnits(entryFee, 6), // USDC has 6 decimals
     platformFeeBP,
     vrfCoordinator,
     keyHash,

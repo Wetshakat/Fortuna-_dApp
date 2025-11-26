@@ -8,6 +8,7 @@ import "./libraries/Errors.sol";
 import "./libraries/Events.sol";
 import "./IFortunaRound.sol";
 import "./IFortunaManager.sol";
+import "./IERC20.sol";
 
 
 contract FortunaVRF is IFortunaRound, VRFConsumerBaseV2 {
@@ -15,6 +16,7 @@ contract FortunaVRF is IFortunaRound, VRFConsumerBaseV2 {
     address[] private _participants;
     IFortunaManager public manager;
     address public core;
+    IERC20 public usdcToken;
 
     bool private _prizeDistributed;
 
@@ -32,6 +34,7 @@ contract FortunaVRF is IFortunaRound, VRFConsumerBaseV2 {
         uint256 startTimestamp_,
         address managerAddress_,
         address coreAddress_,
+        address usdcTokenAddress_,
         address vrfCoordinator_,
         bytes32 keyHash_,
         uint256 subscriptionId_,
@@ -40,6 +43,7 @@ contract FortunaVRF is IFortunaRound, VRFConsumerBaseV2 {
     ) VRFConsumerBaseV2(vrfCoordinator_) {
         require(managerAddress_ != address(0), "InvalidManager");
         require(coreAddress_ != address(0), "InvalidCore");
+        require(usdcTokenAddress_ != address(0), "InvalidUSDCAddress");
 
         _info.roundId = roundId_;
         _info.startTimestamp = startTimestamp_;
@@ -51,6 +55,7 @@ contract FortunaVRF is IFortunaRound, VRFConsumerBaseV2 {
 
         manager = IFortunaManager(managerAddress_);
         core = coreAddress_;
+        usdcToken = IERC20(usdcTokenAddress_);
 
         COORDINATOR = VRFCoordinatorV2Interface(vrfCoordinator_);
         keyHash = keyHash_;
@@ -70,7 +75,7 @@ contract FortunaVRF is IFortunaRound, VRFConsumerBaseV2 {
         _;
     }
 
-    function addPlayer(address player) external payable override onlyCore roundOpen {
+    function addPlayer(address player) external override onlyCore roundOpen {
         if (_participants.length >= 50) revert Errors.RoundFull();
         _participants.push(player);
         _info.playerCount += 1;
@@ -141,12 +146,12 @@ contract FortunaVRF is IFortunaRound, VRFConsumerBaseV2 {
 
         _prizeDistributed = true;
 
-        uint256 totalPrize = _info.entryFee * _participants.length;
+        uint256 totalPrize = usdcToken.balanceOf(address(this));
         uint256 platformFee = (totalPrize * 2) / 100;
         uint256 winnerPrize = totalPrize - platformFee;
 
-        (bool sent, ) = _info.winner.call{value: winnerPrize}("");
-        if (!sent) revert Errors.TransferFailed();
+        usdcToken.transfer(_info.winner, winnerPrize);
+        usdcToken.transfer(address(manager), platformFee);
 
         emit Events.PlatformFeeCollected(_info.roundId, platformFee);
     }
@@ -169,8 +174,6 @@ contract FortunaVRF is IFortunaRound, VRFConsumerBaseV2 {
     }
 
     function getPrizePool() external view override returns (uint256) {
-        return _info.entryFee * _participants.length;
+        return usdcToken.balanceOf(address(this));
     }
-
-    receive() external payable {}
 }

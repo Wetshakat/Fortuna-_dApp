@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "./libraries/Types.sol";
 
 interface IFortunaRound {
-    function addPlayer(address player) external payable;
+    function addPlayer(address player) external;
     function closeRound() external;
     function isRoundFull() external view returns (bool);
     function isExpired() external view returns (bool);

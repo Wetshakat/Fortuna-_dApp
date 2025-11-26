@@ -8,6 +8,7 @@ export async function eip2612Permit({
   ownerAddress,
   spenderAddress,
   value,
+  deadline,
 }) {
   return {
     types: {
@@ -39,9 +40,7 @@ export async function eip2612Permit({
       spender: spenderAddress,
       value: value.toString(),
       nonce: (await token.read.nonces([ownerAddress])).toString(),
-      // The paymaster cannot access block.timestamp due to 4337 opcode
-      // restrictions, so the deadline must be MAX_UINT256.
-      deadline: maxUint256.toString(),
+      deadline: deadline.toString(),
     },
   };
 }
@@ -82,6 +81,7 @@ export async function signPermit({
   account,
   spenderAddress,
   permitAmount,
+  deadline,
 }) {
   const token = getContract({
     client,
@@ -94,6 +94,7 @@ export async function signPermit({
     ownerAddress: account.address,
     spenderAddress,
     value: permitAmount,
+    deadline,
   });
 
   const wrappedPermitSignature = await account.signTypedData(permitData);
